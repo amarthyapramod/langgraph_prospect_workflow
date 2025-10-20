@@ -1,0 +1,230 @@
+{
+  "workflow_name": "OutboundLeadGeneration",
+  "description": "End-to-end AI agent workflow to find, contact, and qualify B2B leads for Axxxxxxxx.ai",
+  "version": "1.0.0",
+  "config": {
+    "scoring": {
+      "seniority_weight": 0.3,
+      "company_size_weight": 0.2,
+      "tech_stack_weight": 0.2,
+      "signal_weight": 0.3,
+      "preferred_seniority": ["Executive", "Manager"],
+      "preferred_company_sizes": ["100-500", "500-1000"],
+      "preferred_technologies": ["Salesforce", "HubSpot", "Outreach"]
+    }
+  },
+  "steps": [
+    {
+      "id": "prospect_search",
+      "agent": "ProspectSearchAgent",
+      "inputs": {
+        "icp": {
+          "industry": "SaaS",
+          "location": "USA",
+          "employee_count": {
+            "min": 100,
+            "max": 1000
+          },
+          "revenue": {
+            "min": 20000000,
+            "max": 200000000
+          }
+        },
+        "signals": [
+          "recent_funding",
+          "hiring_for_sales"
+        ]
+      },
+      "instructions": "Use Clay and Apollo APIs to search for company and contact data matching ICP criteria. Focus on decision-makers in sales and revenue roles. Return structured leads with contact information.",
+      "tools": [
+        {
+          "name": "ClayAPI",
+          "config": {
+            "api_key": "{{CLAY_API_KEY}}",
+            "endpoint": "https://api.clay.com/v1/companies/search"
+          },
+          "description": "Clay API for company discovery and data enrichment"
+        },
+        {
+          "name": "ApolloAPI",
+          "config": {
+            "api_key": "{{APOLLO_API_KEY}}",
+            "endpoint": "https://api.apollo.io/api/v1/mixed_people/organization_top_people"
+          },
+          "description": "Apollo API for contact discovery and verification"
+        }
+      ],
+      "output_schema": {
+        "leads": [
+          {
+            "company": "string",
+            "contact_name": "string",
+            "email": "string",
+            "linkedin": "string",
+            "title": "string",
+            "signal": "string",
+            "source": "string"
+          }
+        ],
+        "count": "number"
+      }
+    },
+    {
+      "id": "enrichment",
+      "agent": "DataEnrichmentAgent",
+      "inputs": {
+        "leads": "{{prospect_search.output.leads}}"
+      },
+      "instructions": "Enrich lead data using BuiltWith API for **technologies used**. Use **Clay** and available **Apollo** endpoints to gather company size, funding stage, and contact seniority level.",
+      "tools": [
+        {
+          "name": "BuiltWithTool",
+          "config": {
+            "api_key": "{{BUILTWITH_API_KEY}}",
+            "endpoint": "https://api.builtwith.com/free1/api.json"
+          },
+          "description": "BuiltWith Free API for technology stack lookup using the company domain. Essential for 'tech_stack_weight' scoring."
+        }
+      ],
+      "output_schema": {
+        "enriched_leads": [
+          {
+            "company": "string",
+            "contact_name": "string",
+            "email": "string",
+            "role": "string",
+            "seniority": "string",
+            "technologies": "array",
+            "company_size": "string",
+            "funding_stage": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scoring",
+      "agent": "ScoringAgent",
+      "inputs": {
+        "enriched_leads": "{{enrichment.output.enriched_leads}}",
+        "scoring_criteria": "{{config.scoring}}"
+      },
+      "instructions": "Score and rank leads based on ICP fit using the configurable scoring function. Assign letter grades (A-D) and prioritize leads with executive seniority, relevant tech stack, and strong buying signals.",
+      "tools": [],
+      "output_schema": {
+        "ranked_leads": "array",
+        "top_leads": "array",
+        "average_score": "number"
+      }
+    },
+    {
+      "id": "outreach_content",
+      "agent": "OutreachContentAgent",
+      "inputs": {
+        "ranked_leads": "{{scoring.output.ranked_leads}}",
+        "persona": "SDR",
+        "tone": "friendly"
+      },
+      "instructions": "Generate personalized outreach messages using gemini and prospect context. Create compelling subject lines and concise email bodies (3-4 sentences) that reference the prospect's specific situation and pain points. Focus on top-graded leads (A and B).",
+      "tools": [
+        {
+          "name": "Gemini",
+          "config": { "api_key": "{{GOOGLE_API_KEY}}" },
+          "description": "Google Gemini for message generation"
+        }
+      ],
+      "output_schema": {
+        "messages": [
+          {
+            "lead": "string",
+            "email": "string",
+            "company": "string",
+            "subject": "string",
+            "email_body": "string",
+            "score": "number"
+          }
+        ]
+      }
+    },
+    {
+      "id": "send",
+      "agent": "OutreachExecutorAgent",
+      "inputs": {
+        "messages": "{{outreach_content.output.messages}}"
+      },
+      "instructions": "Send personalized emails using Apollo API or SendGrid. Log delivery status, timestamps, and any errors. Create a unique campaign ID for tracking purposes.",
+      "tools": [
+        {
+          "name": "ApolloAPI",
+          "config": {
+            "api_key": "{{APOLLO_API_KEY}}",
+            "endpoint": "https://api.apollo.io/v1/emailer_campaigns"
+          },
+          "description": "Apollo API for email delivery"
+        }
+      ],
+      "output_schema": {
+        "sent_status": "array",
+        "campaign_id": "string",
+        "success_count": "number",
+        "total": "number"
+      }
+    },
+    {
+      "id": "response_tracking",
+      "agent": "ResponseTrackerAgent",
+      "inputs": {
+        "campaign_id": "{{send.output.campaign_id}}"
+      },
+      "instructions": "Monitor email engagement metrics including opens, clicks, replies, and meeting bookings. Track sentiment of replies and categorize responses. Use Apollo API to fetch real-time metrics.",
+      "tools": [
+        {
+          "name": "ApolloAPI",
+          "config": {
+            "api_key": "{{APOLLO_API_KEY}}",
+            "endpoint": "https://api.apollo.io/v1/emailer_campaigns/stats"
+          },
+          "description": "Apollo API for campaign tracking"
+        }
+      ],
+      "output_schema": {
+        "responses": "array",
+        "metrics": {
+          "open_rate": "number",
+          "click_rate": "number",
+          "reply_rate": "number",
+          "meeting_rate": "number"
+        }
+      }
+    },
+    {
+      "id": "feedback_trainer",
+      "agent": "FeedbackTrainerAgent",
+      "inputs": {
+        "responses": "{{response_tracking.output.responses}}"
+      },
+      "instructions": "Analyze campaign performance data and generate actionable recommendations for improvement. Suggest refinements to ICP criteria, messaging strategy, subject lines, and targeting. Write recommendations to Google Sheets for human review and approval.",
+      "tools": [
+        {
+          "name": "GoogleSheets",
+          "config": {
+            "sheet_id": "{{SHEET_ID}}",
+            "credentials_path": "{{GOOGLE_CREDENTIALS_PATH}}"
+          },
+          "description": "Google Sheets API for feedback logging"
+        }
+      ],
+      "output_schema": {
+        "recommendations": [
+          {
+            "type": "string",
+            "priority": "string",
+            "suggestion": "string",
+            "expected_impact": "string",
+            "status": "string"
+          }
+        ],
+        "status": "string"
+      }
+    }
+  ]
+}
