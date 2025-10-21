@@ -48,6 +48,7 @@ class ProspectSearchAgent(BaseAgent):
             'reasoning': reasoning
         }
     
+    #This wont work for free tier as contact info isnt available for free on apollo
     def _search_apollo(self, icp: Dict, signals: List[str], config: Dict) -> List[Dict]:
         """Search Apollo API for prospects"""
         api_key = config.get('api_key', '')
@@ -99,7 +100,78 @@ class ProspectSearchAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error calling Apollo API: {e}")
             return self._generate_mock_leads('Apollo', icp, 5)
-    
+    #from apollo free tier (organization data), getting company name and other info and adding mock contact details
+    def _search_apollo_mock(self, icp: Dict, signals: List[str], config: Dict) -> List[Dict]:
+
+        api_key = config.get('api_key', '')
+        
+        if not api_key or api_key.startswith('MISSING'):
+            logger.warning("Apollo API key not configured, returning mock data")
+            return self._generate_mock_leads('Apollo', icp, 5)
+        
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache',
+                'x-api-key': api_key
+            }
+            
+            # Use organizations/search endpoint (free tier)
+            endpoint = 'https://api.apollo.io/api/v1/organizations/search'
+            
+            # Search query
+            search_data = {
+                'person_titles': ['VP Sales', 'Sales Director', 'Head of Sales'],
+                'per_page': 5,  # Limit for demo
+                'page': 1
+            }
+            
+            logger.info("Calling Apollo organizations/search (free tier)...")
+            response = requests.post(endpoint, json=search_data, headers=headers, timeout=30)
+            
+            logger.info(f"Apollo API returned status {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                leads = []
+                
+                organizations = data.get('organizations', [])
+                logger.info(f"Apollo returned {len(organizations)} organizations")
+                
+                for org in organizations:
+                    # Real organization data
+                    company_name = org.get('name', 'Unknown Company')
+                    domain = org.get('primary_domain', 'example.com')
+                    company_size = org.get('estimated_num_employees', 0)
+                    
+                    # Generate contact placeholder (not real person)
+                    contact_name = f"Contact at {company_name}"
+                    contact_email = f"contact@{domain}"
+                    
+                    leads.append({
+                        'company': company_name,
+                        'contact_name': contact_name,
+                        'email': contact_email,
+                        'linkedin': org.get('linkedin_url', ''),
+                        'title': 'Decision Maker',
+                        'signal': signals[0] if signals else 'Active in target market',
+                        'source': 'Apollo (Organization Data)',
+                        'company_domain': domain,
+                        'company_size': company_size,
+                        'company_linkedin': org.get('linkedin_url', ''),
+                        'company_website': org.get('website_url', ''),
+                        'company_industry': ', '.join(org.get('industries', [])[:2]) if org.get('industries') else 'Unknown'
+                    })
+                
+                return leads
+            else:
+                logger.warning(f"Apollo API error {response.status_code}: {response.text[:200]}")
+                return self._generate_mock_leads('Apollo', icp, 5)
+                
+        except Exception as e:
+            logger.error(f"Error calling Apollo API: {e}")
+            return self._generate_mock_leads('Apollo', icp, 5)
+            
     def _search_clay(self, icp: Dict, signals: List[str], config: Dict) -> List[Dict]:
         """Search Clay API for prospects"""
         api_key = config.get('api_key', '')
