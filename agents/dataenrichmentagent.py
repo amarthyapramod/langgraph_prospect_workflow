@@ -104,12 +104,9 @@ class DataEnrichmentAgent(BaseAgent):
             
             # Extract technologies
             technologies = []
-            # Iterate through Results -> Technologies to collect all tech names
-            for result in data.get('Results', []):
-                for technology_group in result.get('Technologies', []):
-                    tech_name = technology_group.get('Name')
-                    if tech_name:
-                        technologies.append(tech_name)
+            # Iterate through Results -> groups to collect all tech names
+            for result in data.get('groups', []):
+                technologies.append(result.get('name', ""))
             
             return {
                 'technologies': list(set(technologies)),
